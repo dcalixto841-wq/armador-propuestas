@@ -38,6 +38,7 @@ Página web para armar membresías a la medida: eliges los servicios y de qué m
    - Usa **Partir de: Clásica / Tradicional / Prestige** para cargar una membresía completa, o marca los servicios uno por uno.
    - En cada servicio eliges la versión que quieres usar.
    - **+ Agregar servicio nuevo** (al final de cada rubro): escribes el nombre y cada sección, con una viñeta por renglón en Alcance, Exclusiones y Procedimiento. Puedes partir del texto de un servicio existente y modificarlo. El servicio nuevo sale con el mismo formato y numeración, todo en amarillo para revisión. Se puede editar o eliminar, y se guarda junto con la configuración.
+   - **Orden:** en el panel "Orden en el anexo" usa ▲ ▼ para acomodar los servicios dentro de cada rubro. El listado de coberturas y la numeración del detalle siguen ese orden. "Restablecer orden original" regresa al orden de los anexos.
 4. **Detalle** de cada servicio:
    - **Montos, eventos y edades:** cambias el valor y el sistema muestra todas las líneas que cambian, para que lo confirmes. Los montos se reescriben también con letra. Las edades incluyen "hijos menores de N años" y "hasta los N años"; esta última ajusta también "cumple N+1 años".
    - Los valores que se pueden cambiar aparecen marcados en verde en el texto, para encontrarlos rápido.
