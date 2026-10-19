@@ -376,7 +376,7 @@ async function makeAnexo() {
   });
   // Título
   let k = findIdx(B, t => t.startsWith('“MEMBRESÍA'));
-  B[k] = replaceInPara(B[k], 'MEMBRESÍA CONTIGO+ PRESTIGE', 'MEMBRESÍA ' + nombre.toUpperCase(), false)[0];
+  B[k] = B[k].replace(/(<w:t(?: [^>]*)?>)MEMBRESÍA [^<]*(<\/w:t>)/, (m0, a, c) => a + esc('MEMBRESÍA ' + nombre.toUpperCase()) + c);
   // Rubros
   k = findIdx(B, t => t.startsWith('Los Servicios se dividen en los siguientes rubros'));
   const rub = [];
@@ -401,7 +401,7 @@ async function makeAnexo() {
   k = findIdx(B, t => t.startsWith('Acceso a los beneficios digitales ('));
   if (k >= 0) { if (!ben.length) kill.add(k); else B[k] = setParaText(B[k], 'Acceso a los beneficios digitales (' + listEs(ben.map(id => BENEF_LABEL[id][0])) + ') directamente desde la Aplicación.'); }
   // Precio
-  k = findIdx(B, t => /^\$61\.91/.test(t));
+  k = findIdx(B, t => /^\$[\d,.]+ \(/.test(t), findIdx(B, t => t.startsWith('El costo mensual por cada Membresía')));
   const pv = parseMoney(d.precio);
   B[k] = pv ? setParaText(B[k], `${fmtMoney(pv)} (${pesosWords(pv, true)})`) : setParaText(B[k], '$xxxx (xxxx pesos xx/100 M.N.)', true);
 
