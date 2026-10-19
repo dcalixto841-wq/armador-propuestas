@@ -49,7 +49,20 @@ header.top h1{font-size:17px;margin:0;font-weight:600}
 .card .sub{margin:0 0 14px;color:var(--muted);font-size:14px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
 .fld label{display:block;font-size:13px;font-weight:600;margin-bottom:4px}
-.fld input{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.fld input,.fld select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.fld input.empty,.fld select.empty{border-color:var(--amber-b);background:color-mix(in srgb,var(--amber) 35%,var(--bg))}
+.fld select:focus{outline:2px solid var(--teal);outline-offset:1px}
+details.card>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;font-weight:600;font-size:16px}
+details.card>summary::-webkit-details-marker{display:none}
+details.card>summary .chev{margin-left:auto;color:var(--muted);transition:transform .15s}
+details.card[open]>summary .chev{transform:rotate(90deg)}
+.pv{background:color-mix(in srgb,var(--teal) 18%,transparent);color:var(--teal-d);border-radius:4px;padding:0 3px;font-weight:600}
+.pv.pv-chg{background:var(--amber);color:inherit}
+.small{font-size:13px;margin:0 0 6px}
+.add-svc{width:100%;background:transparent;border:1px dashed var(--line);border-radius:8px;padding:8px;color:var(--teal);font-weight:600;cursor:pointer;margin:2px 0 4px}
+.add-svc:hover{border-color:var(--teal);background:var(--teal-l)}
+.link.danger{color:var(--warn)}
+.cform textarea,.cform select,.cform input{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
 .fld input:focus,textarea:focus,.prm input:focus{outline:2px solid var(--teal);outline-offset:1px;border-color:transparent}
 .hint{font-size:12.5px;color:var(--muted);margin-top:4px}
 .btn{background:var(--teal);color:#fff;border:0;border-radius:8px;padding:9px 14px;font-weight:600;cursor:pointer}
@@ -79,6 +92,7 @@ h3.cat{font-size:12px;letter-spacing:.08em;color:var(--muted);margin:18px 0 6px;
 .tag{font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:20px}
 .tag.mod{background:var(--amber);border:1px solid var(--amber-b)}
 .tag.warn{background:var(--warn-l);color:var(--warn)}
+.tag.ok{background:var(--teal-l);color:var(--teal-d)}
 .detail{border-top:1px solid var(--line);padding:12px 14px 14px;background:color-mix(in srgb,var(--teal-l) 35%,var(--card))}
 .lbl{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin:6px 0 6px}
 .lim div{padding:2px 0}
@@ -159,9 +173,16 @@ h3.cat{font-size:12px;letter-spacing:.08em;color:var(--muted);margin:18px 0 6px;
         </div>
       </section>
 
+      <details class="card" id="card-contrato">
+        <summary><span class="step">2</span>Datos del contrato <span class="tag" id="contrato-estado"></span><span class="chev">›</span></summary>
+        <p class="sub" style="margin-top:10px">Llenan los datos en amarillo de las cláusulas. Los campos vacíos se marcan en amarillo y quedan como xxxx en el Word. Los datos fijos de ERA SOCIAL (teléfono, banco, aseguradora…) puedes guardarlos para que se llenen solos en las siguientes propuestas.</p>
+        <div id="contrato"></div>
+        <div class="row-actions"><button type="button" class="btn sec" id="b-def">Guardar como predeterminados</button></div>
+      </details>
+
       <section class="card">
-        <h2><span class="step">2</span>Servicios</h2>
-        <p class="sub">Marca los servicios y elige de qué membresía tomar cada uno. En "Detalle" puedes ajustar montos, eventos o el texto; cada cambio pide confirmación.</p>
+        <h2><span class="step">3</span>Servicios</h2>
+        <p class="sub">Marca los servicios y elige de qué membresía tomar cada uno. En "Detalle" puedes ajustar montos, eventos, edades o el texto; cada cambio pide confirmación. También puedes agregar servicios nuevos.</p>
         <div class="toolbar">
           <span class="lbl2">Partir de:</span>
           <button type="button" class="btn sec" data-base="Clásica">Clásica</button>
@@ -175,7 +196,7 @@ h3.cat{font-size:12px;letter-spacing:.08em;color:var(--muted);margin:18px 0 6px;
 
     <aside class="side">
       <section class="card">
-        <h2><span class="step">3</span>Generar</h2>
+        <h2><span class="step">4</span>Generar</h2>
         <p class="sub" id="res-count"></p>
         <button type="button" class="btn big" id="b-anexo">Descargar anexo (Word)</button>
         <button type="button" class="btn big sec" id="b-prop">Descargar propuesta (Word)</button>

@@ -47,6 +47,23 @@ function setParaText(p, text, hl = false) {
   });
   return p;
 }
+function setParaTextSmart(p, text) {
+  const runs = [...p.matchAll(RUN)].filter(m => /<w:t(?: [^>]*)?>/.test(m[0]));
+  if (runs.length < 2) return setParaText(p, text, true);
+  const rt = runs.map(m => unesc((m[0].match(/<w:t(?: [^>]*)?>([^<]*)<\/w:t>/) || ['', ''])[1]));
+  let pos = 0, keep = 0;
+  while (keep < runs.length - 1 && text.startsWith(rt.slice(0, keep + 1).join(''))) keep++;
+  if (keep === 0) return setParaText(p, text, true);
+  pos = rt.slice(0, keep).join('').length;
+  const rest = text.slice(pos);
+  let out = '', last = 0;
+  runs.forEach((m, j) => {
+    out += p.slice(last, m.index); last = m.index + m[0].length;
+    if (j < keep) { out += m[0]; return; }
+    if (j === keep && rest) { let ft = true; out += hlRun(m[0].replace(/<w:t(?: [^>]*)?>[^<]*<\/w:t>/g, () => { if (ft) { ft = false; return '<w:t xml:space="preserve">' + esc(rest) + '</w:t>'; } return ''; })); }
+  });
+  return out + p.slice(last);
+}
 // Reemplaza una cadena literal dentro de los runs, marcando en amarillo lo nuevo.
 function replaceInPara(p, find, repl, hl = true) {
   const fe = esc(find); let count = 0;
@@ -89,6 +106,7 @@ const parseMoney = s => { const v = parseFloat(String(s).replace(/[$,\s]/g, ''))
 const NOUNS = { evento: 'eventos', consulta: 'consultas', 'envío': 'envíos', 'cupón': 'cupones', estudio: 'estudios', mascota: 'mascotas', 'sesión': 'sesiones' };
 const PLUR2S = Object.fromEntries(Object.entries(NOUNS).map(([s, p]) => [p, s]));
 const MONEY_RE = /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)( MXN)?( \([^()]*?M\.N\.\))?/g;
+const AGE_RE = /(menores de|hasta los) (\d{1,2}) años/g;
 const COUNT_RE = new RegExp('(?<![\\d\\w])(\\d{1,2}) (' + [...Object.keys(NOUNS), ...Object.values(NOUNS)].join('|') + ')(?![\\wáéíóúñ])', 'g');
 
 function detectParams(v) {
@@ -104,6 +122,10 @@ function detectParams(v) {
       const sing = PLUR2S[m[2]] || m[2], k = 'c:' + m[1] + ':' + sing;
       (P[k] = P[k] || { key: k, type: 'count', value: +m[1], noun: sing, label: m[1] + ' ' + (m[1] === '1' ? sing : NOUNS[sing]), paras: new Set() }).paras.add(i);
     }
+    for (const m of t.matchAll(AGE_RE)) {
+      const kind = m[1] === 'menores de' ? 'menores' : 'hasta', k = 'a:' + kind + ':' + m[2];
+      (P[k] = P[k] || { key: k, type: 'age', kind, value: +m[2], label: (kind === 'menores' ? 'Hijos menores de ' : 'Edad máxima: hasta los ') + m[2] + ' años', paras: new Set() }).paras.add(i);
+    }
   });
   return Object.values(P);
 }
@@ -115,6 +137,13 @@ function paramReplacements(text, prm, nv) {
       if ('m:' + m[1] !== prm.key) continue;
       let s = fmtMoney(nv) + (m[2] || '') + (m[3] ? ' (' + pesosWords(nv) + ')' : '');
       pairs.push([m[0], s]);
+    }
+  } else if (prm.type === 'age') {
+    for (const m of text.matchAll(AGE_RE)) {
+      const kind = m[1] === 'menores de' ? 'menores' : 'hasta';
+      if ('a:' + kind + ':' + m[2] !== prm.key) continue;
+      pairs.push([m[0], m[1] + ' ' + nv + ' años']);
+      if (kind === 'hasta') { const c1 = 'cumple ' + (+m[2] + 1) + ' años'; if (text.includes(c1)) pairs.push([c1, 'cumple ' + (+nv + 1) + ' años']); }
     }
   } else {
     for (const m of text.matchAll(COUNT_RE)) {
@@ -131,9 +160,82 @@ function paramReplacements(text, prm, nv) {
   return [nt, uniq];
 }
 
+// ---------- Datos del contrato (placeholders del anexo) ----------
+// [clave, etiqueta, grupo, ejemplo, tipo, ¿se guarda como predeterminado?]
+const CFIELDS = [
+  ['tel', 'Teléfono de Cabina de Asistencia', 'Contacto y pagos', '800 000 0000', 'text', 1],
+  ['correoEra', 'Correo de ERA SOCIAL para notificaciones', 'Contacto y pagos', 'contratos@erasocial.mx', 'text', 1],
+  ['correoCli', 'Correo del cliente para notificaciones', 'Contacto y pagos', 'contacto@cliente.com', 'text', 0],
+  ['banco', 'Banco', 'Contacto y pagos', 'BBVA', 'text', 1],
+  ['cuenta', 'Número de cuenta', 'Contacto y pagos', '0123456789', 'text', 1],
+  ['clabe', 'CLABE interbancaria', 'Contacto y pagos', '012180001234567890', 'text', 1],
+  ['diasSusp', 'Días de atraso para suspender el servicio', 'Condiciones', '15', 'int', 1],
+  ['pctAct', '% de Activación para revisar el costo', 'Condiciones', '60', 'int', 1],
+  ['ivrConfig', 'IVR personalizado: configuración ($)', 'Condiciones', '0.00', 'money', 1],
+  ['ivrRenta', 'IVR personalizado: renta mensual ($)', 'Condiciones', '0.00', 'money', 1],
+  ['ivrMin', 'Membresías mínimas para IVR sin costo', 'Condiciones', '2000', 'int', 1],
+  ['appCuota', 'App personalizada: cuota mensual ($)', 'Condiciones', '0.00', 'money', 1],
+  ['aseg', 'Nombre de la Aseguradora', 'Seguros', 'Aseguradora S.A.', 'text', 1],
+  ['esquema', 'Esquema de cobertura', 'Seguros', '', 'select', 1],
+  ['edMin', 'Edad mínima de aceptación', 'Seguros', '18', 'int', 1],
+  ['edMax', 'Edad máxima de aceptación', 'Seguros', '69', 'int', 1],
+  ['edFin', 'Edad en que concluye la cobertura', 'Seguros', '70', 'int', 1],
+  ['diasRep', 'Días para reportar el siniestro', 'Seguros', '30', 'int', 1],
+  ['hIni', 'Horario de siniestros: desde', 'Seguros', '9:00', 'text', 1],
+  ['hFin', 'Horario de siniestros: hasta', 'Seguros', '18:00', 'text', 1],
+];
+const DEF_KEY = 'era-armador-contrato-def';
+const cval = k => String((state.contrato || {})[k] || '').trim();
+const numWords = n => `${Number(n).toLocaleString('en-US')} (${nWords(Number(n))})`;
+// Sustituye en orden los runs que solo contienen un marcador (xxxx, $xxxx, xx% (...), ____)
+function fillRuns(b, vals) {
+  let i = 0;
+  return b.replace(RUN, run => {
+    const tm = run.match(/<w:t(?: [^>]*)?>([^<]*)<\/w:t>/); if (!tm) return run;
+    const t = unesc(tm[1]);
+    if (!/^\s*(\$?x{3,}|xx% \(xx por ciento\)|_{4,})[,.]?\s*$/.test(t)) return run;
+    const v = vals[i++]; if (v == null || v === '') return run;
+    const suf = (t.match(/[,.]\s*$/) || [''])[0];
+    return hlRun(run.replace(tm[0], '<w:t xml:space="preserve">' + esc(v + suf) + '</w:t>'), false);
+  });
+}
+function fillContract(blocks, d) {
+  const m = k => { const v = parseMoney(cval(k)); return v == null || cval(k) === '' ? '' : fmtMoney(v); };
+  const n = k => (/^\d+$/.test(cval(k)) ? numWords(cval(k)) : '');
+  const ni = k => (/^\d+$/.test(cval(k)) ? cval(k) : '');
+  const esq = cval('esquema');
+  return blocks.map(b => {
+    const t = ptext(b);
+    if (t.startsWith('Salvo que en cada servicio se indique otro medio')) return fillRuns(b, [cval('tel')]);
+    if (t.startsWith('Los Seguros incluidos en la Membresía son otorgados por')) return fillRuns(b, [cval('aseg')]);
+    if (t.startsWith('El asegurado es únicamente el Titular. Edad de aceptación')) return fillRuns(b, [ni('edMin'), ni('edMax'), ni('edFin')]);
+    if (t.startsWith('El siniestro debe reportarse dentro de los')) return fillRuns(b, [n('diasRep')]);
+    if (t.startsWith('Reporte y seguimiento de siniestros:')) return fillRuns(b, [cval('hIni'), cval('hFin')]);
+    if (t.includes('mediante transferencia electrónica a la siguiente cuenta bancaria')) return fillRuns(b, [cval('banco'), cval('cuenta'), cval('clabe')]);
+    if (t.startsWith('Si EL CLIENTE no realiza el pago dentro de los')) return fillRuns(b, [n('diasSusp')]);
+    if (t.includes('considera un porcentaje estimado de Activación')) return fillRuns(b, [ni('pctAct') ? `${ni('pctAct')}% (${nWords(+ni('pctAct'))} por ciento)` : '']);
+    if (t.startsWith('ConceptoPrecios') || (isTable(b) && t.includes('Configuración de IVR personalizado'))) return fillRuns(b, [m('ivrConfig'), m('ivrRenta')]);
+    if (t.includes('tendrá un descuento del 100%') || t.includes('Membresías vigentes es menor a')) return fillRuns(b, [n('ivrMin')]);
+    if (t.startsWith('A partir del mes siguiente a la entrega de la Aplicación personalizada')) return fillRuns(b, [m('appCuota')]);
+    if (t.startsWith('Todos los avisos y comunicaciones')) return fillRuns(b, [cval('correoEra'), cval('correoCli')]);
+    if (t.startsWith('Leído que fue por') && d.fecha) return replaceInPara(b, 'el ____ de ______________ de 20____.', 'el ' + fechaLarga(d.fecha) + '.', false)[0];
+    if (isTable(b) && t.startsWith('“EL CLIENTE”') && d.rep.trim()) return fillRuns(b, ['', d.rep.trim().toUpperCase()]);
+    return b;
+  }).filter(b => {
+    const t = ptext(b);
+    if (esq === '1' && t.startsWith('Opción 2: únicamente los Titulares')) return false;
+    if (esq === '2' && t.startsWith('Opción 1: todos los Titulares')) return false;
+    return true;
+  }).map(b => (esq && ptext(b).startsWith('Los Seguros cubren a los Titulares conforme al esquema')) ? setParaText(b, 'Los Seguros cubren a los Titulares conforme al siguiente esquema acordado con la Aseguradora:') : b);
+}
+function contractMissing() {
+  const hasSeg = selectedList().some(i => i.s.cat === 'SEGUROS');
+  return CFIELDS.filter(f => (f[2] !== 'Seguros' || hasSeg) && !cval(f[0])).length;
+}
+
 // ---------- Estado ----------
 let CAT = null, TPL = null;
-const state = { datos: { nombre: 'Contigo+ ', cliente: '', rep: '', fecha: '', precio: '', vigencia: '30' }, sel: {}, edits: {} };
+const state = { datos: { nombre: 'Contigo+ ', cliente: '', rep: '', fecha: '', precio: '', vigencia: '30' }, contrato: {}, custom: [], sel: {}, edits: {} };
 const byId = {}; const vById = {};
 
 function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { } }
@@ -145,7 +247,7 @@ const isModified = vid => { const e = state.edits[vid]; return !!e && (Object.ke
 function buildVariant(v) {
   const e = state.edits[v.id] || { params: {}, paras: {} };
   let xml = v.xml.slice();
-  for (const [i, t] of Object.entries(e.paras)) xml[+i] = setParaText(xml[+i], t, true);
+  for (const [i, t] of Object.entries(e.paras)) xml[+i] = setParaTextSmart(xml[+i], t);
   for (const prm of v.params) {
     if (!(prm.key in e.params)) continue;
     const nv = e.params[prm.key];
@@ -183,10 +285,99 @@ function warnings() {
   }
   if (!L.length) W.push({ msg: 'No has elegido servicios.' });
   if (!parseMoney(state.datos.precio)) W.push({ msg: 'Falta el precio mensual (quedará como $xxxx en amarillo).' });
+  const cm = contractMissing(); if (cm) W.push({ msg: `Faltan ${cm} datos del contrato (quedarán en amarillo en el Word).`, info: true });
   const segs = L.filter(x => x.s.cat === 'SEGUROS');
   if (segs.length && !(L.find(x => x.s.id === 'seguro-de-muerte-accidental') && L.find(x => x.s.id === 'perdida-organica-escala-b')))
     W.push({ msg: 'Las Disposiciones Generales de los Seguros se incluyen completas; se omite la regla de Pérdida Orgánica + Muerte porque no van ambos seguros.' , info: true });
   return W;
+}
+
+// ---------- Servicios nuevos (creados en la página) ----------
+const CSECS = [['desc', 'Descripción:', 'T'], ['alc', 'Alcance:', 'B'], ['exc', 'Exclusiones y Consideraciones:', 'B'], ['proc', 'Procedimiento:', 'B'], ['ven', 'Ventana de servicio (horario de atención):', 'T'], ['lim', 'Límites Variables:', 'T']];
+let TPLP = null; // párrafos modelo tomados del catálogo
+function tplParas() {
+  if (TPLP) return TPLP;
+  const v = CAT.services.find(x => x.id === 'telemedicina').variants[0].xml;
+  const lab = v.find(b => ptext(b) === 'Alcance:');
+  const di = v.findIndex(b => ptext(b) === 'Descripción:');
+  const T = v.slice(di + 1).find(b => ptext(b) && !b.includes('<w:numPr>'));
+  const B = v.slice(1).find(b => b.includes('<w:ilvl w:val="0"/>') && b.includes('<w:numId w:val="11"/>') && ptext(b));
+  TPLP = { H: v[0], L: lab, T, B };
+  return TPLP;
+}
+function customXml(c) {
+  const P = tplParas(); const xml = [setParaText(P.H, c.name || 'Servicio nuevo', true), EMPTY];
+  CSECS.forEach(([k, label, kind], idx) => {
+    xml.push(P.L.includes(label) ? P.L : setParaText(P.L, label));
+    let lines = String(c[k] || '').split('\n').map(x => x.trim()).filter(Boolean);
+    if (k === 'desc' && lines.length) lines = [lines.join(' ')];
+    if (!lines.length) lines = ['xxxx'];
+    lines.forEach(t => { if (kind === 'B' && !/[.:;)!?]$/.test(t)) t += '.'; xml.push(setParaText(kind === 'B' ? P.B : P.T, t, true)); });
+    if (idx < CSECS.length - 1) xml.push(EMPTY);
+  });
+  return xml;
+}
+function syncCustom() {
+  CAT.services = CAT.services.filter(x => !x.custom);
+  for (const id of Object.keys(vById)) if (id.startsWith('nuevo-')) delete vById[id];
+  for (const c of state.custom || []) {
+    const v = { id: c.id + '--v', mem: [], label: 'Nuevo', heading: c.name, xml: customXml(c), refs: [] };
+    const names = CAT.services.map(x => x.name);
+    const T = v.xml.slice(1).map(ptext).join(' ');
+    v.refs = names.filter(n => n !== c.name && T.includes(n));
+    v.params = detectParams(v);
+    const svc = { id: c.id, name: c.name, cat: c.cat, custom: true, variants: [v] };
+    CAT.services.push(svc); byId[c.id] = svc; vById[v.id] = v;
+  }
+  for (const k of Object.keys(state.sel)) if (!vById[state.sel[k]]) delete state.sel[k];
+}
+function customForm(existing, cat) {
+  const c = existing ? { ...existing } : { id: 'nuevo-' + Date.now().toString(36), cat: cat || 'ASISTENCIAS', name: '' };
+  const body = h('div', { class: 'cform' });
+  body.append(h('p', { class: 'muted' }, 'Escribe cada sección. En Alcance, Exclusiones y Procedimiento pon una viñeta por renglón. Todo el texto del servicio nuevo sale en amarillo en el Word para revisión.'));
+  const src = h('select', {}, h('option', { value: '' }, '— Empezar en blanco —'),
+    CAT.services.filter(x => !x.custom).flatMap(x => x.variants.map(v => h('option', { value: v.id }, x.name + ' · ' + v.label))));
+  const fields = {};
+  const rubro = h('select', {}, CATS.map(([k, l]) => h('option', { value: k, selected: k === c.cat }, l)));
+  const name = h('input', { value: c.name || '', placeholder: 'Ej. Asistencia Vial' });
+  body.append(h('div', { class: 'grid' },
+    h('div', { class: 'fld' }, h('label', {}, 'Nombre del servicio'), name),
+    h('div', { class: 'fld' }, h('label', {}, 'Rubro'), rubro)));
+  if (!existing) body.append(h('div', { class: 'fld', style: 'margin-top:10px' }, h('label', {}, 'Partir del texto de un servicio existente (opcional)'), src));
+  for (const [k, label, kind] of CSECS) {
+    const ta = h('textarea', { rows: k === 'desc' ? 3 : 4, placeholder: kind === 'B' ? 'Una viñeta por renglón' : '' }); ta.value = c[k] || '';
+    fields[k] = ta;
+    body.append(h('div', { class: 'fld', style: 'margin-top:10px' }, h('label', {}, label.replace(':', '') + (kind === 'B' ? ' (una viñeta por renglón)' : '')), ta));
+  }
+  src.addEventListener('change', () => {
+    const v = vById[src.value]; if (!v) return;
+    if (Object.values(fields).some(t => t.value.trim()) && !confirm('Se reemplazará lo que ya escribiste. ¿Continuar?')) { src.value = ''; return; }
+    for (const [k, label] of CSECS) fields[k].value = sectionLines(v.xml, label.replace(':', '').split(' (')[0]).map(l => l.t).join('\n');
+    if (!name.value.trim()) name.value = v.heading + ' (nuevo)';
+  });
+  modal(existing ? 'Editar servicio nuevo' : 'Agregar servicio nuevo', body, existing ? 'Guardar cambios' : 'Agregar servicio', () => {
+    const nm = name.value.replace(/\s+/g, ' ').trim();
+    if (!nm) { alert('Escribe el nombre del servicio.'); name.focus(); return false; }
+    if (CAT.services.some(x => x.name.toLowerCase() === nm.toLowerCase() && x.id !== c.id)) { alert('Ya existe un servicio con ese nombre.'); return false; }
+    if (!fields.desc.value.trim()) { alert('Escribe al menos la descripción.'); fields.desc.focus(); return false; }
+    c.name = nm; c.cat = rubro.value; for (const [k] of CSECS) c[k] = fields[k].value;
+    state.custom = (state.custom || []).filter(x => x.id !== c.id).concat([c]);
+    delete state.edits[c.id + '--v'];
+    syncCustom(); state.sel[c.id] = c.id + '--v'; open.add(c.id); render();
+  });
+}
+
+// Marca en color los valores editables (montos, eventos, edades) dentro de un texto
+const MARK_RE = new RegExp(MONEY_RE.source + '|' + COUNT_RE.source + '|' + AGE_RE.source, 'g');
+function markText(text, changed) {
+  const frag = document.createDocumentFragment(); let last = 0;
+  for (const m of text.matchAll(MARK_RE)) {
+    if (m.index > last) frag.append(text.slice(last, m.index));
+    const sp = document.createElement('span'); sp.className = 'pv' + (changed ? ' pv-chg' : ''); sp.textContent = m[0]; sp.title = 'Valor editable en "Montos, eventos y edades"';
+    frag.append(sp); last = m.index + m[0].length;
+  }
+  if (last < text.length) frag.append(text.slice(last));
+  return frag;
 }
 
 // ---------- UI ----------
@@ -202,7 +393,39 @@ const h = (tag, attrs = {}, ...kids) => {
 const open = new Set();
 
 function render() {
-  renderDatos(); renderServicios(); renderResumen(); save();
+  renderDatos(); renderContrato(); renderServicios(); renderResumen(); save();
+}
+function renderContrato() {
+  const root = $('#contrato'); if (!root) return;
+  const hasSeg = selectedList().some(i => i.s.cat === 'SEGUROS');
+  if (root.dataset.built !== (hasSeg ? 's' : 'n')) {
+    root.innerHTML = ''; root.dataset.built = hasSeg ? 's' : 'n';
+    const groups = [...new Set(CFIELDS.map(f => f[2]))];
+    for (const g of groups) {
+      if (g === 'Seguros' && !hasSeg) continue;
+      root.append(h('div', { class: 'lbl' }, g));
+      const grid = h('div', { class: 'grid' });
+      for (const [k, label, , ph, type, def] of CFIELDS.filter(f => f[2] === g)) {
+        let inp;
+        if (type === 'select') {
+          inp = h('select', { id: 'c-' + k }, h('option', { value: '' }, 'Dejar las dos opciones (por definir)'), h('option', { value: '1' }, 'Opción 1: todos los Titulares desde su alta'), h('option', { value: '2' }, 'Opción 2: solo Titulares activados, desde su Activación'));
+        } else inp = h('input', { id: 'c-' + k, placeholder: 'Ej. ' + ph, inputmode: type === 'text' ? 'text' : 'decimal' });
+        inp.value = cval(k);
+        inp.addEventListener(type === 'select' ? 'change' : 'input', () => { state.contrato[k] = inp.value; inp.classList.toggle('empty', !inp.value.trim()); contratoEstado(); renderResumen(); save(); });
+        inp.classList.toggle('empty', !cval(k));
+        grid.append(h('div', { class: 'fld' }, h('label', { for: 'c-' + k }, label, def ? '' : h('span', { class: 'muted' }, ' · de este contrato')), inp));
+      }
+      root.append(grid);
+    }
+  } else {
+    for (const [k] of CFIELDS) { const el = $('#c-' + k); if (el && document.activeElement !== el) { el.value = cval(k); el.classList.toggle('empty', !cval(k)); } }
+  }
+  contratoEstado();
+}
+function contratoEstado() {
+  const miss = contractMissing();
+  $('#contrato-estado').textContent = miss ? `Faltan ${miss}` : 'Completo';
+  $('#contrato-estado').className = 'tag ' + (miss ? 'warn' : 'ok');
 }
 function renderDatos() {
   for (const k of Object.keys(state.datos)) { const el = $('#f-' + k); if (el && document.activeElement !== el) el.value = state.datos[k]; }
@@ -215,6 +438,7 @@ function renderServicios() {
     const list = CAT.services.filter(s => s.cat === cat);
     root.append(h('h3', { class: 'cat' }, label));
     for (const s of list) root.append(serviceRow(s));
+    root.append(h('button', { type: 'button', class: 'add-svc', onclick: () => customForm(null, cat) }, '+ Agregar servicio nuevo en ' + label));
   }
 }
 function serviceRow(s) {
@@ -226,6 +450,7 @@ function serviceRow(s) {
       type: 'button', class: 'seg-b' + (vid === x.id ? ' act' : ''), title: 'Versión de ' + x.mem.join(', '),
       onclick: () => { state.sel[s.id] = x.id; render(); }
     }, x.label))),
+    s.custom ? h('span', { class: 'tags' }, h('button', { type: 'button', class: 'link', onclick: () => customForm(state.custom.find(x => x.id === s.id)) }, 'Editar'), h('button', { type: 'button', class: 'link danger', onclick: () => { if (confirm('¿Eliminar el servicio "' + s.name + '"?')) { state.custom = state.custom.filter(x => x.id !== s.id); delete state.sel[s.id]; delete state.edits[s.id + '--v']; syncCustom(); render(); } } }, 'Eliminar')) : null,
     on ? h('span', { class: 'tags' }, isModified(vid) ? h('span', { class: 'tag mod' }, 'Modificado') : null,
       warnings().some(w => w.s === s.id) ? h('span', { class: 'tag warn', title: 'Menciona un servicio no incluido' }, 'Revisar') : null) : null,
     on ? h('button', { type: 'button', class: 'link', onclick: () => { open.has(s.id) ? open.delete(s.id) : open.add(s.id); render(); } }, open.has(s.id) ? 'Ocultar' : 'Detalle') : null
@@ -240,22 +465,22 @@ function detailPanel(s, v) {
   const miss = warnings().filter(w => w.s === s.id);
   miss.forEach(w => box.append(h('div', { class: 'alert' }, w.msg)));
   const lim = sectionLines(xml, 'Límites Variables', v.xml);
-  if (lim.length) box.append(h('div', { class: 'lim' }, h('div', { class: 'lbl' }, 'Límites Variables'), lim.map(l => h('div', { class: l.hl ? 'hlt' : '' }, l.t))));
+  if (lim.length) box.append(h('div', { class: 'lim' }, h('div', { class: 'lbl' }, 'Límites Variables'), lim.map(l => h('div', { class: l.hl ? 'hlt' : '' }, markText(l.t, l.hl)))));
   if (v.params.length) {
-    box.append(h('div', { class: 'lbl' }, 'Montos y eventos'));
+    box.append(h('div', { class: 'lbl' }, 'Montos, eventos y edades'), h('p', { class: 'muted small' }, 'Los valores marcados en verde en el texto son los que puedes cambiar aquí.'));
     const grid = h('div', { class: 'params' });
     for (const prm of v.params) {
       const cur = prm.key in e.params ? e.params[prm.key] : prm.value;
       const inp = h('input', { type: 'text', inputmode: 'decimal', value: prm.type === 'money' ? fmtMoney(cur) : cur, class: prm.key in e.params ? 'chg' : '' });
       const apply = () => {
         const raw = inp.value; const nv = prm.type === 'money' ? parseMoney(raw) : parseInt(raw, 10);
-        if (nv == null || isNaN(nv) || (prm.type === 'count' && (nv < 1 || nv > 99))) { inp.value = prm.type === 'money' ? fmtMoney(cur) : cur; return; }
+        if (nv == null || isNaN(nv) || (prm.type === 'count' && (nv < 1 || nv > 99)) || (prm.type === 'age' && (nv < 1 || nv > 99))) { inp.value = prm.type === 'money' ? fmtMoney(cur) : cur; return; }
         if (nv === cur) { inp.value = prm.type === 'money' ? fmtMoney(cur) : cur; return; }
         confirmParam(s, v, prm, nv, () => { if (nv === prm.value) delete e.params[prm.key]; else e.params[prm.key] = nv; render(); }, () => { inp.value = prm.type === 'money' ? fmtMoney(cur) : cur; });
       };
       inp.addEventListener('change', apply);
       inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') inp.blur(); });
-      grid.append(h('label', { class: 'prm' }, h('span', {}, (prm.type === 'money' ? 'Monto ' : 'Cantidad: ') + prm.label + ` · en ${prm.paras.size} ${prm.paras.size === 1 ? 'línea' : 'líneas'}`), inp,
+      grid.append(h('label', { class: 'prm' }, h('span', {}, (prm.type === 'money' ? 'Monto ' : prm.type === 'age' ? '' : 'Cantidad: ') + prm.label + ` · en ${prm.paras.size} ${prm.paras.size === 1 ? 'línea' : 'líneas'}`), inp,
         prm.key in e.params ? h('button', { type: 'button', class: 'link', onclick: () => { delete e.params[prm.key]; render(); } }, 'Deshacer') : null));
     }
     box.append(grid);
@@ -283,7 +508,7 @@ function modal(title, bodyEl, okText, onOk, onCancel) {
 }
 function confirmParam(s, v, prm, nv, ok, cancel) {
   const xml = buildVariant(v); const body = h('div');
-  body.append(h('p', {}, `Vas a cambiar ${prm.label} por ${prm.type === 'money' ? fmtMoney(nv) : nv + ' ' + (nv === 1 ? prm.noun : NOUNS[prm.noun])} en ${v.heading} (versión ${v.label}). Estas líneas cambian:`));
+  body.append(h('p', {}, `Vas a cambiar ${prm.label} por ${prm.type === 'money' ? fmtMoney(nv) : prm.type === 'age' ? nv + ' años' : nv + ' ' + (nv === 1 ? prm.noun : NOUNS[prm.noun])} en ${v.heading} (versión ${v.label}). Estas líneas cambian:`));
   for (const i of prm.paras) {
     const t = ptext(xml[i]); const [nt] = paramReplacements(t, prm, nv); if (nt === t) continue;
     const d = diffHtml(t, nt);
@@ -303,7 +528,7 @@ function textEditor(s, v) {
     const cur = ptext(xml[i]);
     const isLabel = /:$/.test(orig) && orig.length < 50 && !b.includes('<w:numPr>');
     const line = h('div', { class: 'ln' + (isLabel ? ' lab' : '') + (i in e.paras ? ' hlt' : '') + (b.includes('<w:ilvl w:val="1"/>') ? ' sub' : b.includes('<w:numPr>') ? ' bul' : '') });
-    const txt = h('span', {}, cur);
+    const txt = h('span', {}, markText(cur, i in e.paras));
     line.append(txt);
     if (!isLabel) line.append(h('button', {
       type: 'button', class: 'pen', title: 'Editar', onclick: () => {
@@ -446,7 +671,7 @@ async function makeAnexo() {
     if (kill.has(i)) continue;
     out.push(B[i]);
   }
-  zip.file('word/document.xml', D.head + out.join('') + D.tail);
+  zip.file('word/document.xml', D.head + fillContract(out, d).join('') + D.tail);
   let core = await zip.file('docProps/core.xml').async('string');
   core = core.replace(/<dc:title>[^<]*<\/dc:title>/, '<dc:title>' + esc('Anexo A - Membresía ' + nombre) + '</dc:title>').replace(/<dc:creator>[^<]*<\/dc:creator>/, '<dc:creator>ERA SOCIAL</dc:creator>');
   zip.file('docProps/core.xml', core);
@@ -537,6 +762,10 @@ async function boot() {
   CAT = await (await fetch('catalog.json')).json();
   for (const s of CAT.services) { byId[s.id] = s; for (const v of s.variants) { v.params = detectParams(v); vById[v.id] = v; } }
   load();
+  if (!state.contrato) state.contrato = {};
+  if (!Array.isArray(state.custom)) state.custom = [];
+  syncCustom();
+  try { const df = JSON.parse(localStorage.getItem(DEF_KEY) || '{}'); for (const [k] of CFIELDS) if (!state.contrato[k] && df[k]) state.contrato[k] = df[k]; } catch (e) { }
   for (const k of Object.keys(state.sel)) if (!vById[state.sel[k]]) delete state.sel[k];
   for (const k of Object.keys(state.datos)) {
     const el = $('#f-' + k); if (!el) continue;
@@ -545,13 +774,17 @@ async function boot() {
   document.querySelectorAll('[data-base]').forEach(b => b.addEventListener('click', () => {
     if (Object.keys(state.sel).length && !confirm('Esto reemplaza la selección actual por los servicios de ' + b.dataset.base + '. ¿Continuar?')) return; base(b.dataset.base);
   }));
+  $('#b-def').addEventListener('click', () => {
+    const df = {}; for (const f of CFIELDS) if (f[5] && cval(f[0])) df[f[0]] = cval(f[0]);
+    try { localStorage.setItem(DEF_KEY, JSON.stringify(df)); alert('Listo: estos datos se llenarán solos en tus próximas propuestas (en este navegador).'); } catch (e) { alert('No se pudieron guardar en este navegador.'); }
+  });
   $('#b-limpiar').addEventListener('click', () => { if (confirm('¿Quitar todos los servicios y cambios?')) { state.sel = {}; state.edits = {}; open.clear(); render(); } });
   $('#b-anexo').addEventListener('click', e => guard(e.target, async () => download(await makeAnexo(), 'Anexo_A_' + slug() + '.docx')));
   $('#b-prop').addEventListener('click', e => guard(e.target, async () => download(await makePropuesta(), 'Propuesta_' + slug() + '.docx')));
   $('#b-guardar').addEventListener('click', () => download(new Blob([JSON.stringify({ app: 'era-armador', v: 1, ...state }, null, 1)], { type: 'application/json' }), 'Configuracion_' + slug() + '.json'));
   $('#f-abrir').addEventListener('change', async e => {
     const f = e.target.files[0]; if (!f) return;
-    try { const s = JSON.parse(await f.text()); if (s.app !== 'era-armador') throw new Error('archivo no reconocido'); state.datos = s.datos; state.sel = s.sel; state.edits = s.edits || {}; open.clear(); render(); }
+    try { const s = JSON.parse(await f.text()); if (s.app !== 'era-armador') throw new Error('archivo no reconocido'); state.datos = s.datos; state.sel = s.sel; state.edits = s.edits || {}; state.contrato = s.contrato || {}; state.custom = s.custom || []; syncCustom(); open.clear(); render(); }
     catch (err) { alert('No se pudo abrir: ' + err.message); }
     e.target.value = '';
   });

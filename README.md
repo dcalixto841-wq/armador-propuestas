@@ -30,21 +30,28 @@ Página web para armar membresías a la medida: eliges los servicios y de qué m
 ## Cómo se usa
 
 1. **Datos:** nombre de la membresía, cliente, representante, fecha, precio mensual sin IVA y vigencia de la propuesta. Lo que quede vacío sale como `xxxx` en amarillo.
-2. **Servicios:**
+2. **Datos del contrato:**
+   - Llenan los datos que en el anexo quedaban en amarillo: teléfono de Cabina, correos, banco, días de suspensión, % de Activación, costos de IVR y App, Aseguradora y datos de los Seguros.
+   - Los campos vacíos se marcan en amarillo en la página y salen como `xxxx` en el Word.
+   - **Guardar como predeterminados** guarda en ese navegador los datos fijos de ERA SOCIAL para que se llenen solos en las siguientes propuestas.
+3. **Servicios:**
    - Usa **Partir de: Clásica / Tradicional / Prestige** para cargar una membresía completa, o marca los servicios uno por uno.
    - En cada servicio eliges la versión que quieres usar.
-3. **Detalle** de cada servicio:
-   - **Montos y eventos:** cambias el valor y el sistema muestra todas las líneas que cambian, para que lo confirmes. Los montos se reescriben también con letra.
+   - **+ Agregar servicio nuevo** (al final de cada rubro): escribes el nombre y cada sección, con una viñeta por renglón en Alcance, Exclusiones y Procedimiento. Puedes partir del texto de un servicio existente y modificarlo. El servicio nuevo sale con el mismo formato y numeración, todo en amarillo para revisión. Se puede editar o eliminar, y se guarda junto con la configuración.
+4. **Detalle** de cada servicio:
+   - **Montos, eventos y edades:** cambias el valor y el sistema muestra todas las líneas que cambian, para que lo confirmes. Los montos se reescriben también con letra. Las edades incluyen "hijos menores de N años" y "hasta los N años"; esta última ajusta también "cumple N+1 años".
+   - Los valores que se pueden cambiar aparecen marcados en verde en el texto, para encontrarlos rápido.
    - **Ver y editar el texto completo:** para cualquier otro cambio, línea por línea, también con confirmación.
    - Todo lo modificado queda marcado como *Modificado* en la página y **en amarillo en el Word**.
-4. **Avisos:**
+5. **Avisos:**
    - Si un servicio menciona otro que no incluiste (por ejemplo, Médico a Domicilio menciona Telemedicina), aparece un aviso para que revises el texto o agregues el servicio.
    - También avisa si falta el precio.
-5. **Generar:** descargas el anexo y la propuesta.
-6. **Guardar configuración:** descarga un archivo `.json` que puedes volver a abrir después para modificar la propuesta. La página también recuerda tu último trabajo en ese navegador.
+6. **Generar:** descargas el anexo y la propuesta.
+7. **Guardar configuración:** descarga un archivo `.json` que puedes volver a abrir después para modificar la propuesta. La página también recuerda tu último trabajo en ese navegador.
 
 ## Lo que el sistema ajusta solo
 
+- Servicios nuevos creados en la página, con el mismo formato que los del catálogo.
 - Título de la membresía, encabezado con cliente, representante y fecha, y el precio con letra.
 - Listado de coberturas y numeración del detalle.
 - Rubros de la Cláusula Segunda, según lo que incluyas: Asistencias, Beneficios y Seguros.
