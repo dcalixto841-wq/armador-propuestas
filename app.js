@@ -10,6 +10,7 @@ const MEMS = ['Clásica', 'Tradicional', 'Prestige'];
 const BENEF_LABEL = { 'boletos-de-cine': ['Boletos de Cine', 'Boletos de Cine'], 'plataforma-de-aprendizaje-uvelop': ['Plataforma de Aprendizaje Uvelop', 'Uvelop'], 'red-de-descuentos-epic-club': ['Red de Descuentos Epic Club', 'la Red de Descuentos'] };
 const BENEF_ORDER = ['boletos-de-cine', 'plataforma-de-aprendizaje-uvelop', 'red-de-descuentos-epic-club'];
 const STORE_KEY = 'era-armador-v1';
+const APP_VERSION = '4';
 
 // ---------- Utilidades XML ----------
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -591,7 +592,7 @@ function base(mem) {
 }
 
 // ---------- Generación del anexo ----------
-async function loadTpl() { if (!TPL) TPL = await (await fetch('plantilla.docx')).arrayBuffer(); return await JSZip.loadAsync(TPL); }
+async function loadTpl() { if (!TPL) { const r = await fetch('plantilla.docx', { cache: 'no-cache' }); if (!r.ok) throw new Error('no se encontró plantilla.docx (' + r.status + ')'); TPL = await r.arrayBuffer(); } return await JSZip.loadAsync(TPL); }
 function splitDoc(x) {
   const bs = x.indexOf('<w:body>') + 8; const be = x.lastIndexOf('<w:sectPr');
   const blocks = x.slice(bs, be).match(BLK) || [];
@@ -776,7 +777,7 @@ async function guard(btn, fn) {
 // ---------- Inicio ----------
 async function sha256(s) { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join(''); }
 async function boot() {
-  CAT = await (await fetch('catalog.json')).json();
+  { const r = await fetch('catalog.json', { cache: 'no-cache' }); if (!r.ok) throw new Error('no se encontró catalog.json (' + r.status + ')'); CAT = await r.json(); }
   for (const s of CAT.services) { byId[s.id] = s; for (const v of s.variants) { v.params = detectParams(v); vById[v.id] = v; } }
   load();
   if (!state.contrato) state.contrato = {};
@@ -791,16 +792,16 @@ async function boot() {
   document.querySelectorAll('[data-base]').forEach(b => b.addEventListener('click', () => {
     if (Object.keys(state.sel).length && !confirm('Esto reemplaza la selección actual por los servicios de ' + b.dataset.base + '. ¿Continuar?')) return; base(b.dataset.base);
   }));
-  $('#b-def').addEventListener('click', () => {
+  $('#b-def')?.addEventListener('click', () => {
     const df = {}; for (const f of CFIELDS) if (f[5] && cval(f[0])) df[f[0]] = cval(f[0]);
     try { localStorage.setItem(DEF_KEY, JSON.stringify(df)); alert('Listo: estos datos se llenarán solos en tus próximas propuestas (en este navegador).'); } catch (e) { alert('No se pudieron guardar en este navegador.'); }
   });
-  $('#b-orden').addEventListener('click', () => { state.order = []; render(); });
-  $('#b-limpiar').addEventListener('click', () => { if (confirm('¿Quitar todos los servicios y cambios?')) { state.sel = {}; state.edits = {}; open.clear(); render(); } });
-  $('#b-anexo').addEventListener('click', e => guard(e.target, async () => download(await makeAnexo(), 'Anexo_A_' + slug() + '.docx')));
-  $('#b-prop').addEventListener('click', e => guard(e.target, async () => download(await makePropuesta(), 'Propuesta_' + slug() + '.docx')));
-  $('#b-guardar').addEventListener('click', () => download(new Blob([JSON.stringify({ app: 'era-armador', v: 1, ...state }, null, 1)], { type: 'application/json' }), 'Configuracion_' + slug() + '.json'));
-  $('#f-abrir').addEventListener('change', async e => {
+  $('#b-orden')?.addEventListener('click', () => { state.order = []; render(); });
+  $('#b-limpiar')?.addEventListener('click', () => { if (confirm('¿Quitar todos los servicios y cambios?')) { state.sel = {}; state.edits = {}; open.clear(); render(); } });
+  $('#b-anexo')?.addEventListener('click', e => guard(e.target, async () => download(await makeAnexo(), 'Anexo_A_' + slug() + '.docx')));
+  $('#b-prop')?.addEventListener('click', e => guard(e.target, async () => download(await makePropuesta(), 'Propuesta_' + slug() + '.docx')));
+  $('#b-guardar')?.addEventListener('click', () => download(new Blob([JSON.stringify({ app: 'era-armador', v: 1, ...state }, null, 1)], { type: 'application/json' }), 'Configuracion_' + slug() + '.json'));
+  $('#f-abrir')?.addEventListener('change', async e => {
     const f = e.target.files[0]; if (!f) return;
     try { const s = JSON.parse(await f.text()); if (s.app !== 'era-armador') throw new Error('archivo no reconocido'); state.datos = s.datos; state.sel = s.sel; state.edits = s.edits || {}; state.contrato = s.contrato || {}; state.custom = s.custom || []; state.order = s.order || []; syncCustom(); open.clear(); render(); }
     catch (err) { alert('No se pudo abrir: ' + err.message); }
@@ -809,7 +810,7 @@ async function boot() {
   render();
 }
 document.addEventListener('DOMContentLoaded', () => {
-  const ok = () => { $('#login').hidden = true; $('#app').hidden = false; boot().catch(e => { console.error(e); alert('No se pudo cargar el catálogo. Abre la página desde GitHub Pages o un servidor (no como archivo local).'); }); };
+  const ok = () => { $('#login').hidden = true; $('#app').hidden = false; boot().catch(e => { console.error(e); alert('No se pudo iniciar la página: ' + (e && e.message ? e.message : e) + '\n\nRevisa que index.html, app.js y catalog.json estén actualizados en el repositorio y recarga la página.'); }); };
   let pre = false; try { pre = sessionStorage.getItem('era-ok') === PASS_HASH; } catch (e) { }
   if (pre) return ok();
   $('#login-form').addEventListener('submit', async e => {
