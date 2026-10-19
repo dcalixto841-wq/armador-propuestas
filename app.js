@@ -274,7 +274,12 @@ function sectionLines(xml, label, orig) {
 // ---------- Selección ----------
 function selectedList() {
   const L = [];
-  for (const [cat] of CATS) for (const s of CAT.services.filter(s => s.cat === cat)) if (state.sel[s.id]) L.push({ s, v: vById[state.sel[s.id]] });
+  const ord = state.order || [];
+  const pos = s => { const i = ord.indexOf(s.id); return i < 0 ? 1e6 + CAT.services.indexOf(s) : i; };
+  for (const [cat] of CATS) {
+    const list = CAT.services.filter(s => s.cat === cat && state.sel[s.id]);
+    list.sort((a, b) => pos(a) - pos(b)).forEach(s => L.push({ s, v: vById[state.sel[s.id]] }));
+  }
   return L;
 }
 function warnings() {
@@ -553,15 +558,27 @@ function textEditor(s, v) {
   const restore = () => { $('#m-cancel').style.display = ''; };
   $('#m-ok').addEventListener('click', restore, { once: true });
 }
+function moveSvc(items, j, d) {
+  const ids = items.map(x => x.s.id); [ids[j], ids[j + d]] = [ids[j + d], ids[j]];
+  const rest = (state.order || []).filter(id => !ids.includes(id));
+  state.order = [...rest, ...ids];
+  render();
+}
 function renderResumen() {
   const L = selectedList(); const ol = $('#res-list'); ol.innerHTML = '';
   let n = 0;
   for (const [cat, label] of CATS) {
     const items = L.filter(x => x.s.cat === cat); if (!items.length) continue;
     ol.append(h('li', { class: 'rcat' }, label));
-    for (const { s, v } of items) ol.append(h('li', {}, h('span', { class: 'num' }, ++n + '.'), ' ' + v.heading, h('span', { class: 'muted' }, ' · ' + v.label), isModified(v.id) ? h('span', { class: 'dot', title: 'Modificado' }) : null));
+    items.forEach(({ s, v }, j) => ol.append(h('li', { class: 'ritem' },
+      h('span', { class: 'num' }, ++n + '.'),
+      h('span', { class: 'rname' }, v.heading, h('span', { class: 'muted' }, ' · ' + v.label), isModified(v.id) ? h('span', { class: 'dot', title: 'Modificado' }) : null),
+      h('span', { class: 'mv' },
+        h('button', { type: 'button', title: 'Subir', disabled: j === 0, onclick: () => moveSvc(items, j, -1) }, '▲'),
+        h('button', { type: 'button', title: 'Bajar', disabled: j === items.length - 1, onclick: () => moveSvc(items, j, 1) }, '▼')))));
   }
   if (!L.length) ol.append(h('li', { class: 'muted' }, 'Aún no hay servicios.'));
+  const rb = $('#b-orden'); if (rb) rb.hidden = !(state.order && state.order.length);
   const W = warnings(); const wl = $('#res-warn'); wl.innerHTML = '';
   W.forEach(w => wl.append(h('li', { class: w.info ? 'info' : '' }, w.msg)));
   $('#res-count').textContent = L.length ? `${L.length} servicios` : '';
@@ -569,7 +586,7 @@ function renderResumen() {
 function base(mem) {
   state.sel = {};
   for (const s of CAT.services) { const v = s.variants.find(x => x.mem.includes(mem)); if (v) state.sel[s.id] = v.id; }
-  state.datos.nombre = 'Contigo+ ' + mem;
+  state.datos.nombre = 'Contigo+ ' + mem; state.order = [];
   open.clear(); render();
 }
 
@@ -778,13 +795,14 @@ async function boot() {
     const df = {}; for (const f of CFIELDS) if (f[5] && cval(f[0])) df[f[0]] = cval(f[0]);
     try { localStorage.setItem(DEF_KEY, JSON.stringify(df)); alert('Listo: estos datos se llenarán solos en tus próximas propuestas (en este navegador).'); } catch (e) { alert('No se pudieron guardar en este navegador.'); }
   });
+  $('#b-orden').addEventListener('click', () => { state.order = []; render(); });
   $('#b-limpiar').addEventListener('click', () => { if (confirm('¿Quitar todos los servicios y cambios?')) { state.sel = {}; state.edits = {}; open.clear(); render(); } });
   $('#b-anexo').addEventListener('click', e => guard(e.target, async () => download(await makeAnexo(), 'Anexo_A_' + slug() + '.docx')));
   $('#b-prop').addEventListener('click', e => guard(e.target, async () => download(await makePropuesta(), 'Propuesta_' + slug() + '.docx')));
   $('#b-guardar').addEventListener('click', () => download(new Blob([JSON.stringify({ app: 'era-armador', v: 1, ...state }, null, 1)], { type: 'application/json' }), 'Configuracion_' + slug() + '.json'));
   $('#f-abrir').addEventListener('change', async e => {
     const f = e.target.files[0]; if (!f) return;
-    try { const s = JSON.parse(await f.text()); if (s.app !== 'era-armador') throw new Error('archivo no reconocido'); state.datos = s.datos; state.sel = s.sel; state.edits = s.edits || {}; state.contrato = s.contrato || {}; state.custom = s.custom || []; syncCustom(); open.clear(); render(); }
+    try { const s = JSON.parse(await f.text()); if (s.app !== 'era-armador') throw new Error('archivo no reconocido'); state.datos = s.datos; state.sel = s.sel; state.edits = s.edits || {}; state.contrato = s.contrato || {}; state.custom = s.custom || []; state.order = s.order || []; syncCustom(); open.clear(); render(); }
     catch (err) { alert('No se pudo abrir: ' + err.message); }
     e.target.value = '';
   });
